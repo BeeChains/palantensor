@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Palantensor ▓▓ Shield Mode</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/bittensor@latest"></script>
+  <script src="https://unpkg.com/snarkjs@latest"></script>
+  <script src="https://unpkg.com/@zk-email/relayer@latest"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@700&family=Rajdhani:wght@600&display=swap" rel="stylesheet">
+  <style>
+    body { font-family: 'Rajdhani', sans-serif; background:#0d0d0d; color:#0f0; }
+    .glitch { animation: glitch 2s infinite; }
+    @keyframes glitch { 0%,100%{text-shadow:2px 0 #f00,-2px 0 #0ff;} 50%{text-shadow:-2px 0 #f00,2px 0 #0ff;} }
+    .scanline { position:fixed; top:0; width:100%; height:4px; background:linear-gradient(transparent,#0f0,transparent); animation:scan 4s linear infinite; pointer-events:none; }
+    @keyframes scan { 0%{transform:translateY(-100%)} 100%{transform:translateY(100vh)} }
+    .grid { background-image: linear-gradient(#0f0 1px, transparent 1px), linear-gradient(90deg, #0f0 1px, transparent 1px); background-size: 40px 40px; opacity:0.1; }
+  </style>
+</head>
+<body class="grid min-h-screen overflow-hidden relative">
+  <div class="scanline"></div>
+  
+  <!-- HEADER BAR -->
+  <header class="fixed top-0 w-full z-50 bg-black/90 border-b border-green-500 flex items-center justify-between px-4 py-2">
+    <div class="flex items-center gap-4">
+      <img src="https://i.imgur.com/5v5e5v5.png" alt="Shield" class="w-10 glitch"/>
+      <h1 class="text-2xl orbitron glitch">PALANTENSOR</h1>
+      <span id="connection" class="text-xs animate-pulse">● CONNECTED TO SN</span>
+    </div>
+    <button id="walletBtn" class="px-4 py-1 bg-green-900 hover:bg-green-700 border border-green-500 rounded">CONNECT TAO</button>
+  </header>
+
+  <div class="flex h-screen pt-16">
+    <!-- LEFT TACTICAL PANEL -->
+    <aside class="w-80 bg-black/80 border-r border-green-500 p-4 space-y-4 overflow-y-auto">
+      <div class="space-y-3">
+        <h2 class="text-xl">THREAT RADAR</h2>
+        <div id="radar" class="grid grid-cols-3 gap-2 text-xs">
+          <!-- JS fills 9 blips -->
+        </div>
+      </div>
+
+      <div>
+        <h2 class="text-xl">SELF-DEFENSE KIT</h2>
+        <button class="w-full my-1 px-3 py-2 bg-red-900/50 border border-red-500 hover:bg-red-800 text-left">▶ Deepfake Detector</button>
+        <button class="w-full my-1 px-3 py-2 bg-orange-900/50 border border-orange-500 hover:bg-orange-800 text-left">▶ Doxx Shield (ZK)</button>
+        <button class="w-full my-1 px-3 py-2 bg-yellow-900/50 border border-yellow-500 hover:bg-yellow-800 text-left">▶ Scam-Wallet Tracer</button>
+        <button class="w-full my-1 px-3 py-2 bg-green-900/50 border border-green-500 hover:bg-green-800 text-left">▶ Neighborhood Patrol</button>
+      </div>
+
+      <div>
+        <h2 class="text-xl">EARN TAO</h2>
+        <code class="block p-2 bg-black border border-green-500 text-xs overflow-x-auto">
+          pip install palantensor && pten mine
+        </code>
+        <div class="text-xs mt-2">node: <span id="earnings">0.00</span> TAO/day</div>
+      </div>
+    </aside>
+
+    <!-- MAIN CHAT + MAP -->
+    <main class="flex-1 flex flex-col">
+      <!-- MAP OVERLAY -->
+      <div id="map" class="flex-1 relative bg-gray-900">
+        <iframe src="https://map.palantensor.ai" class="absolute inset-0 w-full h-full" frameborder="0"></iframe>
+        <div class="absolute top-4 left-4 bg-black/80 border border-green-500 p-4 rounded">
+          <p class="text-xs">LIVE: 1.2M nodes shielding 47K citizens</p>
+        </div>
+      </div>
+
+      <!-- CHAT BAR -->
+      <div class="p-4 bg-black/90 border-t border-green-500 flex gap-3">
+        <input id="prompt" type="text" placeholder="Ask in plain English → get proof, no trace" class="flex-1 bg-black border border-green-500 px-4 py-3 focus:outline-none focus:border-cyan-400"/>
+        <button id="send" class="px-6 py-3 bg-green-900 hover:bg-green-700 border border-green-500 font-bold">SHIELD ME</button>
+      </div>
+
+      <!-- RESPONSE BUBBLE -->
+      <div id="response" class="hidden absolute bottom-24 left-1/2 -translate-x-1/2 max-w-2xl w-full">
+        <div class="bg-black/90 border-2 border-cyan-400 p-6 rounded-lg shadow-2xl">
+          <div id="proof" class="mb-4 text-xs opacity-70">ZK-PROOF: Verified on-chain, zero leak</div>
+          <div id="answer" class="text-lg"></div>
+          <button id="copyProof" class="mt-4 px-4 py-1 bg-cyan-900 border border-cyan-500 text-xs">COPY PROOF</button>
+        </div>
+      </div>
+    </main>
+  </div>
+
+  <script>
+    // ====== DECENTRALIZED MAGIC ======
+    let wallet, miner;
+    const subnet = 81;
+
+    // 1. Wallet connect
+    document.getElementById('walletBtn').onclick = async () => {
+      wallet = await bt.Wallet.create();
+      document.getElementById('connection').innerText = `● ${wallet.hotkey.ss58Address.slice(0,8)}…`;
+      startMining();
+    };
+
+    // 2. One-liner mining
+    async function startMining() {
+      miner = await bt.subtensor(subnet).miner({wallet});
+      setInterval(() => {
+        const earned = (Math.random()*2.4 + 0.8).toFixed(2);
+        document.getElementById('earnings').innerText = earned;
+      }, 5000);
+    }
+
+    // 3. ZK Query (snarkjs + circom circuit baked in)
+    document.getElementById('send').onclick = async () => {
+      const query = document.getElementById('prompt').value;
+      if (!query) return;
+
+      // Show loading
+      const resp = document.getElementById('response');
+      resp.classList.remove('hidden');
+      document.getElementById('answer').innerText = 'Generating ZK proof…';
+
+      // Fake circuit proof (replace with real .zkey)
+      const { proof, publicSignals } = await snarkjs.groth16.fullProve(
+        {q: query.split('').map(c=>c.charCodeAt(0))}, 
+        "https://palantensor.ai/circuit.wasm", 
+        "https://palantensor.ai/circuit.zkey"
+      );
+
+      // Route to SN miners
+      const answer = await fetch(`https://api.palantensor.ai/ask`, {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({query, proof: JSON.stringify(proof)})
+      }).then(r=>r.json());
+
+      document.getElementById('answer').innerText = answer.text;
+      document.getElementById('proof').innerText = `ZK-PROOF: ${publicSignals[0].slice(0,16)}…`;
+    };
+
+    // 4. Radar blips
+    const radar = document.getElementById('radar');
+    for(let i=0;i<9;i++){
+      const blip = document.createElement('div');
+      blip.className = 'w-6 h-6 border border-green-500 rounded-full animate-ping';
+      blip.style.animationDelay = `${i*0.3}s`;
+      radar.appendChild(blip);
+    }
+
+    // 5. Tactical hotkeys
+    document.addEventListener('keydown', e => {
+      if (e.ctrlKey && e.key === 'Enter') document.getElementById('send').click();
+      if (e.key === 'Escape') document.getElementById('response').classList.add('hidden');
+    });
+
+    // 6. Copy proof to clipboard
+    document.getElementById('copyProof').onclick = () => {
+      navigator.clipboard.writeText(document.getElementById('proof').innerText);
+      alert('Proof copied — share anywhere, reveal nothing.');
+    };
+  </script>
+</body>
+</html>
